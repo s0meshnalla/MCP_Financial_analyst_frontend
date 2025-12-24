@@ -1,28 +1,24 @@
-import React, { useState } from 'react';
-import { BarChart3, PieChart, TrendingUp, AlertTriangle, Clock, CheckCircle } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { BarChart3, PieChart, AlertTriangle, Clock, CheckCircle, ArrowRight } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
+import api from '../api/axios';
 
 const DashboardPage = () => {
-    const [portfolioData] = useState({
-        totalValue: 125430,
-        dayChange: 1247,
-        dayChangePercent: 0.99,
-        positions: [
-            { symbol: 'AAPL', shares: 50, avgPrice: 165.30, currentPrice: 178.45, value: 8922.50, gain: 657.50 },
-            { symbol: 'GOOGL', shares: 30, avgPrice: 138.50, currentPrice: 142.87, value: 4286.10, gain: 131.10 },
-            { symbol: 'MSFT', shares: 25, avgPrice: 390.20, currentPrice: 412.56, value: 10314.00, gain: 559.00 },
-            { symbol: 'TSLA', shares: 40, avgPrice: 255.00, currentPrice: 248.32, value: 9932.80, loss: -267.20 },
-        ],
+    const navigate = useNavigate();
+    const transactionsFetched = useRef(false);
+    const dashboardFetched = useRef(false);
+    const [portfolioData, setPortfolioData] = useState({
+        totalValue: 0,
+        dayChange: 0,
+        dayChangePercent: 0,
+        positions: [],
         allocation: [
             { sector: 'Technology', percentage: 65, value: 81529.50 },
             { sector: 'Healthcare', percentage: 20, value: 25086.00 },
             { sector: 'Finance', percentage: 15, value: 18814.50 },
         ],
-        recentTrades: [
-            { id: 1, symbol: 'AAPL', type: 'BUY', shares: 10, price: 178.45, time: '10:30 AM', status: 'executed' },
-            { id: 2, symbol: 'GOOGL', type: 'SELL', shares: 5, price: 142.87, time: '09:15 AM', status: 'executed' },
-            { id: 3, symbol: 'MSFT', type: 'BUY', shares: 5, price: 412.56, time: 'Yesterday', status: 'executed' },
-        ],
+        recentTrades: [],
         agentInsights: [
             { agent: 'Technical Analysis', status: 'active', lastUpdate: '2 mins ago', message: 'Bullish trend detected in AAPL' },
             { agent: 'Sentiment Analysis', status: 'active', lastUpdate: '5 mins ago', message: 'Positive sentiment: +0.78' },
@@ -30,6 +26,103 @@ const DashboardPage = () => {
             { agent: 'Portfolio Manager', status: 'active', lastUpdate: '15 mins ago', message: 'Rebalancing recommended' },
         ],
     });
+
+    useEffect(() => {
+        const fetchTransactions = async () => {
+            try {
+                const { data } = await api.get('/transactions');
+                const raw = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
+                const mapped = raw
+                    .map((tx, idx) => {
+                        const shares = Number(tx?.assetQuantity) || 0;
+                        const amount = Number(tx?.amount) || 0;
+                        const price = shares ? amount / shares : 0;
+                        const created = tx?.createdAt ? new Date(tx.createdAt) : null;
+                        const createdMs = created ? created.getTime() : 0;
+                        const time = created
+                            ? created.toLocaleString([], { hour: '2-digit', minute: '2-digit', hour12: true })
+                            : '—';
+
+                        return {
+                            id: tx?.id ?? idx,
+                            symbol: tx?.asset || 'N/A',
+                            type: (tx?.type || '').toUpperCase() === 'SELL' ? 'SELL' : 'BUY',
+                            shares,
+                            price: Number(price.toFixed(2)),
+                            time,
+                            status: 'executed',
+                            createdMs,
+                        };
+                    })
+                    .sort((a, b) => b.createdMs - a.createdMs)
+                    .slice(0, 4)
+                    .map(({ createdMs, ...rest }) => rest); // drop helper field
+                console.log('Fetched transactions:', mapped);
+                setPortfolioData(prev => ({ ...prev, recentTrades: mapped }));
+            } catch (err) {
+                console.error('Failed to fetch transactions', err);
+            }
+        };
+        if (!transactionsFetched.current) {
+            transactionsFetched.current = true;
+            fetchTransactions();
+        }
+    }, []);
+
+    useEffect(() => {
+        const fetchDashboard = async () => {
+            try {
+                const { data } = await api.get('/dashboard');
+                const raw = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
+                console.log('Fetched dashboard data:', raw);
+                const numberOrZero = (val) => (Number.isFinite(val) ? val : 0);
+                const mapped = raw.map((item, idx) => {
+                    const shares = Number(item?.shares) || 0;
+                    const avgPrice = Number(item?.avgBuyPrice ?? item?.avgprice ?? item?.avg_price) || 0;
+                    const currentPrice = Number(item?.currentPrice ?? item?.currentprice ?? item?.current_price) || 0;
+                    const value = Number(item?.totalAmount ?? item?.totalamount ?? item?.total_amount) || 0;
+                    const gainLoss = Number(item?.gainLoss ?? item?.gainloss ?? item?.gain_loss) || 0;
+                    return {
+                        id: item?.symbol || idx,
+                        symbol: item?.symbol || 'N/A',
+                        shares,
+                        avgPrice,
+                        currentPrice,
+                        value,
+                        gain: gainLoss >= 0 ? gainLoss : undefined,
+                        loss: gainLoss < 0 ? gainLoss : undefined,
+                    };
+                });
+
+                const sorted = [...mapped].sort((a, b) => {
+                    const valueDiff = numberOrZero(b.value) - numberOrZero(a.value);
+                    if (valueDiff !== 0) return valueDiff;
+                    const gainLossA = numberOrZero(a.gain ?? a.loss);
+                    const gainLossB = numberOrZero(b.gain ?? b.loss);
+                    return gainLossB - gainLossA;
+                });
+
+                const totalValue = sorted.reduce((sum, p) => sum + (p.value || 0), 0);
+                const totalGain = sorted.reduce((sum, p) => sum + ((p.gain ?? p.loss) || 0), 0);
+                const dayChangePercent = totalValue ? Number(((totalGain / totalValue) * 100).toFixed(2)) : 0;
+
+                setPortfolioData(prev => ({
+                    ...prev,
+                    positions: sorted,
+                    totalValue: Number(totalValue.toFixed(2)),
+                    dayChange: Number(totalGain.toFixed(2)),
+                    dayChangePercent,
+                }));
+            } catch (err) {
+                console.error('Failed to fetch dashboard data', err);
+            }
+        };
+
+        if (!dashboardFetched.current) {
+            dashboardFetched.current = true;
+            fetchDashboard();
+        }
+    }, []);
 
     return (
         <div className="min-h-screen bg-gray-50">
@@ -112,19 +205,26 @@ const DashboardPage = () => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {portfolioData.positions.map((position) => (
-                                    <tr key={position.symbol} className="border-b hover:bg-gray-50">
-                                        <td className="py-3 px-4 font-medium">{position.symbol}</td>
-                                        <td className="text-right py-3 px-4">{position.shares}</td>
-                                        <td className="text-right py-3 px-4">${position.avgPrice.toFixed(2)}</td>
-                                        <td className="text-right py-3 px-4">${position.currentPrice.toFixed(2)}</td>
-                                        <td className="text-right py-3 px-4">${position.value.toFixed(2)}</td>
-                                        <td className={`text-right py-3 px-4 font-semibold ${(position.gain || position.loss) > 0 ? 'text-green-600' : 'text-red-600'
-                                            }`}>
-                                            {(position.gain || position.loss) > 0 ? '+' : ''}${(position.gain || position.loss).toFixed(2)}
-                                        </td>
-                                    </tr>
-                                ))}
+                                {portfolioData.positions.map((position) => {
+                                    const avg = Number.isFinite(position.avgPrice) ? position.avgPrice : 0;
+                                    const cur = Number.isFinite(position.currentPrice) ? position.currentPrice : 0;
+                                    const val = Number.isFinite(position.value) ? position.value : 0;
+                                    const gl = Number.isFinite(position.gain || position.loss) ? (position.gain || position.loss) : 0;
+                                    const glClass = gl >= 0 ? 'text-green-600' : 'text-red-600';
+                                    const glPrefix = gl > 0 ? '+' : '';
+                                    return (
+                                        <tr key={position.symbol} className="border-b hover:bg-gray-50">
+                                            <td className="py-3 px-4 font-medium">{position.symbol}</td>
+                                            <td className="text-right py-3 px-4">{position.shares}</td>
+                                            <td className="text-right py-3 px-4">${avg.toFixed(2)}</td>
+                                            <td className="text-right py-3 px-4">${cur.toFixed(2)}</td>
+                                            <td className="text-right py-3 px-4">${val.toFixed(2)}</td>
+                                            <td className={`text-right py-3 px-4 font-semibold ${glClass}`}>
+                                                {glPrefix}${gl.toFixed(2)}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>
@@ -160,7 +260,16 @@ const DashboardPage = () => {
 
                     {/* Recent Trades */}
                     <div className="bg-white rounded-xl shadow-md p-6">
-                        <h2 className="text-xl font-bold text-gray-900 mb-4">Recent Trades</h2>
+                        <div className="flex items-center justify-between mb-4">
+                            <h2 className="text-xl font-bold text-gray-900">Recent Trades</h2>
+                            <button
+                                onClick={() => navigate('/transactions')}
+                                className="flex items-center gap-1 text-blue-600 hover:text-blue-700 text-sm font-medium transition"
+                            >
+                                View More
+                                <ArrowRight className="w-4 h-4" />
+                            </button>
+                        </div>
                         <div className="space-y-3">
                             {portfolioData.recentTrades.map((trade) => (
                                 <div key={trade.id} className="p-4 border border-gray-200 rounded-lg">

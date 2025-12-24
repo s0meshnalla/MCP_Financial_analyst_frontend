@@ -1,24 +1,82 @@
-import React, { useState } from 'react';
-import { User, Mail, Phone, Shield, DollarSign, Target, Save } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { User, Mail, Phone, Shield, DollarSign, Target, Save, Loader } from 'lucide-react';
 import Navbar from '../components/Navbar';
-
+import api from '../api/axios';
 const ProfilePage = () => {
     const [profile, setProfile] = useState({
-        name: 'N. Somesh',
-        email: 'someshnalla06@gmail.com',
-        phone: '9182445725',
+        username: '',
+        email: '',
+        phone: '',
         riskProfile: 'moderate',
-        investmentBudget: 50000,
-        preferredAssets: ['stocks', 'etf'],
+        balance: '',
+        preferredAssets: [],
     });
 
     const [isEditing, setIsEditing] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const didFetchProfile = useRef(false);
 
-    const handleSave = () => {
-        setIsEditing(false);
-        // API call to save profile
-        alert('Profile updated successfully!');
+    useEffect(() => {
+        const fetchUserProfile = async () => {
+            try {
+                
+                const response = await api.get('/profile/me');
+                if (response.status !== 200) {
+                    console.log(response);
+                    throw new Error('Failed to fetch user profile');
+                }
+
+                const data = response.data.data;
+                // console.log('Fetched profile data:', data);
+                setProfile({
+                    username: data.username || '',
+                    email: data.email || '',
+                    phone: data.phone || '',
+                    balance: data.balance || '',
+                    riskProfile: data.riskProfile || 'moderate',
+                    preferredAssets: data.preferredAssets || ['stocks'],
+                });
+            } catch (err) {
+                console.error('Error fetching profile:', err);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        if (!didFetchProfile.current) {
+            didFetchProfile.current = true;
+            fetchUserProfile();
+        }
+    }, []);
+
+    const handleSave = async () => {
+        // alert('Profile updated successfully!');
+        try {
+            setIsEditing(false);
+            const response = await api.put('/profile/me', {
+                ...profile,
+            });
+
+            if (response.status !== 200) throw new Error('Failed to update profile');
+
+            alert('Profile updated successfully!');
+        } catch (err) {
+            console.error('Error updating profile:', err);
+            if (err.response.data.data==="JWT signature does not match locally computed signature. JWT validity cannot be asserted and should not be trusted.") {
+                window.location.reload();
+            }else{
+                alert('Failed to update profile. Please try again.');
+            }
+        }
     };
+
+    if (loading) {
+        return (
+            <div className="min-h-screen flex justify-center items-center bg-gray-50">
+                <Loader className="w-10 h-10 text-blue-600 animate-spin" />
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen bg-gray-50">
@@ -33,7 +91,7 @@ const ProfilePage = () => {
                                 <User className="w-12 h-12 text-blue-600" />
                             </div>
                             <div>
-                                <h1 className="text-2xl font-bold text-white">{profile.name}</h1>
+                                <h1 className="text-2xl font-bold text-white">{profile.username}</h1>
                                 <p className="text-blue-100">Investor Profile</p>
                             </div>
                         </div>
@@ -62,6 +120,7 @@ const ProfilePage = () => {
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                            {/* Name */}
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-2">
                                     <User className="w-4 h-4 inline mr-2" />
@@ -69,13 +128,14 @@ const ProfilePage = () => {
                                 </label>
                                 <input
                                     type="text"
-                                    value={profile.name}
-                                    onChange={(e) => setProfile({ ...profile, name: e.target.value })}
+                                    value={profile.username}
+                                    onChange={(e) => setProfile({ ...profile, username: e.target.value })}
                                     disabled={!isEditing}
                                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
                                 />
                             </div>
 
+                            {/* Email */}
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-2">
                                     <Mail className="w-4 h-4 inline mr-2" />
@@ -84,12 +144,12 @@ const ProfilePage = () => {
                                 <input
                                     type="email"
                                     value={profile.email}
-                                    onChange={(e) => setProfile({ ...profile, email: e.target.value })}
-                                    disabled={!isEditing}
-                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+                                    disabled
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-500"
                                 />
                             </div>
 
+                            {/* Phone */}
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-2">
                                     <Phone className="w-4 h-4 inline mr-2" />
@@ -104,15 +164,16 @@ const ProfilePage = () => {
                                 />
                             </div>
 
+                            {/* Budget */}
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-2">
                                     <DollarSign className="w-4 h-4 inline mr-2" />
-                                    Investment Budget ($)
+                                    Account balance ($)
                                 </label>
                                 <input
                                     type="number"
-                                    value={profile.investmentBudget}
-                                    onChange={(e) => setProfile({ ...profile, investmentBudget: e.target.value })}
+                                    value={profile.balance}
+                                    onChange={(e) => setProfile({ ...profile, balance: e.target.value })}
                                     disabled={!isEditing}
                                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
                                 />
@@ -126,6 +187,7 @@ const ProfilePage = () => {
                                 Investment Preferences
                             </h3>
 
+                            {/* Risk Profile */}
                             <div className="mb-6">
                                 <label className="block text-sm font-medium text-gray-700 mb-2">
                                     <Shield className="w-4 h-4 inline mr-2" />
@@ -143,6 +205,7 @@ const ProfilePage = () => {
                                 </select>
                             </div>
 
+                            {/* Assets */}
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-2">
                                     Preferred Asset Types
@@ -157,7 +220,10 @@ const ProfilePage = () => {
                                                     if (e.target.checked) {
                                                         setProfile({ ...profile, preferredAssets: [...profile.preferredAssets, asset] });
                                                     } else {
-                                                        setProfile({ ...profile, preferredAssets: profile.preferredAssets.filter(a => a !== asset) });
+                                                        setProfile({
+                                                            ...profile,
+                                                            preferredAssets: profile.preferredAssets.filter(a => a !== asset),
+                                                        });
                                                     }
                                                 }}
                                                 disabled={!isEditing}

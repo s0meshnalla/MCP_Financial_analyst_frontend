@@ -1,23 +1,37 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Lock, Mail, TrendingUp } from 'lucide-react';
+import api from '../api/axios';
+import { useAuth } from "../context/AuthContext";
 
 const LoginPage = () => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
     const navigate = useNavigate();
-
+    const { setAccessToken, setUser } = useAuth();
     const handleLogin = async (e) => {
         e.preventDefault();
-        setIsLoading(true);
 
-        // Simulate API call
-        setTimeout(() => {
-            localStorage.setItem('token', 'demo-token');
-            navigate('/home');
-        }, 1500);
+        try {
+            const response = await api.post("/auth/login", {email,password});
+            const { accessToken, user } = response.data.data;
+
+            setAccessToken(accessToken);
+
+            setUser(user);
+
+            navigate("/home");
+
+        } catch (error) {
+            console.error("Login error:", error);
+
+            const message =
+            error.response?.data?.message || "Login failed";
+
+            alert(message);
+        }
     };
+
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-blue-900 via-slate-900 to-purple-900 flex items-center justify-center p-4">
@@ -68,18 +82,21 @@ const LoginPage = () => {
 
                         <button
                             type="submit"
-                            disabled={isLoading}
                             className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition duration-200 disabled:opacity-50"
-                        >
-                            {isLoading ? 'Signing In...' : 'Sign In'}
+                        >Log-In
                         </button>
+                        <div className="mt-6 text-center">
+                            <a href="/signup" className="text-sm text-blue-400 hover:text-blue-300">
+                                Don't have an account? Sign Up
+                            </a>
+                        </div>
                     </form>
 
-                    <div className="mt-6 text-center">
+                    {/* <div className="mt-6 text-center">
                         <a href="#" className="text-sm text-blue-400 hover:text-blue-300">
                             Forgot Password?
                         </a>
-                    </div>
+                    </div> */}
                 </div>
             </div>
         </div>

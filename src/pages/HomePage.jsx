@@ -1,16 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { TrendingUp, TrendingDown, DollarSign, Activity, AlertCircle } from 'lucide-react';
 import Navbar from '../components/Navbar';
 
 const HomePage = () => {
-    const [marketData, setMarketData] = useState([
+    const [marketData] = useState([
         { symbol: 'AAPL', price: 178.45, change: 2.34, changePercent: 1.33 },
         { symbol: 'GOOGL', price: 142.87, change: -1.12, changePercent: -0.78 },
         { symbol: 'MSFT', price: 412.56, change: 5.67, changePercent: 1.39 },
         { symbol: 'TSLA', price: 248.32, change: -3.45, changePercent: -1.37 },
     ]);
 
-    const [alerts, setAlerts] = useState([
+    const [alerts] = useState([
         { id: 1, type: 'success', message: 'AAPL reached target price of $178', time: '2 mins ago' },
         { id: 2, type: 'warning', message: 'High volatility detected in TSLA', time: '15 mins ago' },
     ]);
