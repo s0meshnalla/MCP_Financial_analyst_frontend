@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Lock, Mail, TrendingUp } from 'lucide-react';
 import api from '../api/axios';
 import { useAuth } from "../context/AuthContext";
@@ -14,8 +14,8 @@ const LoginPage = () => {
 
         try {
             const response = await api.post("/auth/login", {email,password});
-            const { accessToken, user } = response.data.data;
-
+            var { accessToken, user } = response.data.data;
+            user={...user, isProfileCreated: true};
             setAccessToken(accessToken);
 
             setUser(user);
@@ -86,9 +86,15 @@ const LoginPage = () => {
                         >Log-In
                         </button>
                         <div className="mt-6 text-center">
-                            <a href="/signup" className="text-sm text-blue-400 hover:text-blue-300">
-                                Don't have an account? Sign Up
-                            </a>
+                            <p className="text-sm text-gray-300">
+                                Don't have an account?{' '}
+                                <Link
+                                    to="/signup"
+                                    className="text-blue-400 hover:text-blue-300 font-medium"
+                                >
+                                    Sign Up
+                                </Link>
+                            </p>
                         </div>
                     </form>
 

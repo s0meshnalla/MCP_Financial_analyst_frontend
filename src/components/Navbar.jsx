@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Home, MessageSquare, BarChart3, User, LogOut, TrendingUp, ArrowLeftRight } from 'lucide-react';
+import { Home, MessageSquare, BarChart3, User, LogOut, TrendingUp, ArrowLeftRight, DollarSign } from 'lucide-react';
 import api from "../api/axios";
 import { useAuth } from "../context/AuthContext";
 
@@ -85,6 +85,14 @@ const Navbar = () => {
 
                             {dropdownOpen && (
                                 <div className="absolute right-0 mt-2 w-40 bg-white border border-gray-200 rounded-lg shadow-lg py-2">
+                                    <Link
+                                        to="/profile/add-balance"
+                                        className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:bg-gray-100 transition"
+                                        onClick={() => setDropdownOpen(false)}
+                                    >
+                                        <DollarSign className="w-4 h-4" />
+                                        <span>Add Balance</span>
+                                    </Link>
                                     <Link
                                         to="/profile"
                                         className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:bg-gray-100 transition"

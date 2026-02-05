@@ -2,6 +2,12 @@
 
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
 
+## Configuration
+
+1. Copy `.env.example` to `.env` (or `.env.local`).
+2. Set `REACT_APP_API_BASE_URL` to the backend origin, for example `https://api.example.com`.
+3. Environment values prefixed with `REACT_APP_` are embedded in the client bundle, so do not place secrets or private keys in these files.
+
 ## Available Scripts
 
 In the project directory, you can run:
