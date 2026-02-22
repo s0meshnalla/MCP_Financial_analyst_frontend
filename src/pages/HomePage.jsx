@@ -25,7 +25,11 @@ const HomePage = () => {
             setError(null);
             try {
                 // Fetch user holdings
-                const holdingRes = await api.get('/profile/holdings');
+                const [holdingRes, scRes] = await Promise.all([
+                    api.get('/profile/holdings'),
+                    api.get('/user-stockchange')
+                ]);
+
                 const rawHoldings = Array.isArray(holdingRes?.data?.data)
                     ? holdingRes.data.data
                     : Array.isArray(holdingRes?.data)
@@ -46,7 +50,6 @@ const HomePage = () => {
                     setTodaysGain(0);
                     setTodaysGainPercent(0);
                     setActivePositions(0);
-                    return;
                 }
 
                 // Compute portfolio value directly from holdings (quantity * price)
@@ -61,7 +64,6 @@ const HomePage = () => {
 
                 // Fetch user stock changes once
                 try {
-                    const scRes = await api.get('/user-stockchange');
                     const scRaw = Array.isArray(scRes?.data?.data) ? scRes.data.data : [];
                     const normalized = scRaw.map((item) => ({
                         symbol: item?.symbol,
