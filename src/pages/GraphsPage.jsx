@@ -3,17 +3,19 @@ import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
   ArrowLeft,
+  ArrowDownRight,
+  ArrowUpRight,
   CalendarRange,
   LineChart as LineChartIcon,
   Loader2,
   Search,
   TrendingUp,
+  TrendingDown,
 } from 'lucide-react';
 import {
-  Brush,
+  Area,
+  AreaChart,
   CartesianGrid,
-  Line,
-  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -22,9 +24,9 @@ import {
 import Navbar from '../components/Navbar';
 import api from '../api/axios';
 
+/* ── helpers ── */
 const parseDailyPrices = (raw) => {
   if (!raw) return [];
-
   const normalize = (dateValue, payload) => {
     const time = new Date(dateValue);
     const close = Number(payload?.close ?? payload?.['4. close']);
@@ -44,110 +46,132 @@ const parseDailyPrices = (raw) => {
       ts: time.getTime(),
     };
   };
-
-  if (Array.isArray(raw)) {
-    return raw
-      .map((row) => normalize(row.date, row))
-      .filter(Boolean)
-      .sort((a, b) => a.ts - b.ts);
-  }
-
-  if (typeof raw === 'object') {
-    return Object.entries(raw)
-      .map(([date, values]) => normalize(date, values))
-      .filter(Boolean)
-      .sort((a, b) => a.ts - b.ts);
-  }
-
+  if (Array.isArray(raw))
+    return raw.map((r) => normalize(r.date, r)).filter(Boolean).sort((a, b) => a.ts - b.ts);
+  if (typeof raw === 'object')
+    return Object.entries(raw).map(([d, v]) => normalize(d, v)).filter(Boolean).sort((a, b) => a.ts - b.ts);
   return [];
 };
 
+const fmt = (v) =>
+  Number(v || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
+
+/* ── Tooltip ── */
 const PriceTooltip = ({ active, payload, label }) => {
-  if (!active || !payload || !payload.length) return null;
-  const point = payload[0].payload;
+  if (!active || !payload?.length) return null;
+  const p = payload[0].payload;
   return (
-    <div className="rounded-lg border border-gray-200 bg-white/95 px-3 py-2 shadow-md text-sm">
-      <p className="text-gray-900 font-semibold">{point.label || label}</p>
-      <p className="text-blue-700 font-bold text-base">${point.close.toFixed(2)}</p>
-      <p className="text-[11px] text-gray-600">H {point.high ?? '—'} · L {point.low ?? '—'} · O {point.open ?? '—'}</p>
-      {point.volume ? <p className="text-[11px] text-gray-500">Vol {point.volume.toLocaleString()}</p> : null}
+    <div className="rounded-xl border border-gray-200/80 bg-white/95 backdrop-blur px-4 py-3 shadow-lg text-sm min-w-[160px]">
+      <p className="text-xs font-medium text-gray-500">{p.label || label}</p>
+      <p className="text-xl font-bold text-gray-900 mt-0.5">{fmt(p.close)}</p>
+      <div className="flex gap-3 mt-1.5 text-[11px] text-gray-500">
+        <span>O {p.open != null ? fmt(p.open) : '—'}</span>
+        <span>H {p.high != null ? fmt(p.high) : '—'}</span>
+        <span>L {p.low != null ? fmt(p.low) : '—'}</span>
+      </div>
+      {p.volume ? <p className="text-[11px] text-gray-400 mt-1">Vol {p.volume.toLocaleString()}</p> : null}
     </div>
   );
 };
 
+/* ── Gradient definition for area chart ── */
+const ChartGradient = ({ id, isUp }) => (
+  <defs>
+    <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stopColor={isUp ? '#10b981' : '#ef4444'} stopOpacity={0.25} />
+      <stop offset="100%" stopColor={isUp ? '#10b981' : '#ef4444'} stopOpacity={0.02} />
+    </linearGradient>
+  </defs>
+);
+
 const GraphsPage = () => {
   const navigate = useNavigate();
   const [companies, setCompanies] = useState([]);
-  
   const [selectedTicker, setSelectedTicker] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortMode, setSortMode] = useState('none'); // none | az | za
+  const [sortMode, setSortMode] = useState('none');
   const [series, setSeries] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [hoverPoint, setHoverPoint] = useState(null);
-  const [lastxddays, setLastxddays] = useState(null);
-  const lastHoverRef = useRef(null);
+  const [totalDays, setTotalDays] = useState(null);
+  const [viewRange, setViewRange] = useState({ start: 0, end: 0 });
+  const chartContainerRef = useRef(null);
+  const viewRangeRef = useRef(viewRange);
+  const seriesLenRef = useRef(0);
 
+  /* ── derived ── */
   const filteredTickers = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
     const base = q
-      ? companies.filter((item) =>
-          item.symbol?.toLowerCase().includes(q) || item.name?.toLowerCase().includes(q)
+      ? companies.filter(
+          (c) => c.symbol?.toLowerCase().includes(q) || c.name?.toLowerCase().includes(q),
         )
       : companies;
-
     const sorted = [...base];
     if (sortMode === 'az') sorted.sort((a, b) => (a.symbol || '').localeCompare(b.symbol || ''));
     if (sortMode === 'za') sorted.sort((a, b) => (b.symbol || '').localeCompare(a.symbol || ''));
     return sorted;
   }, [searchTerm, sortMode, companies]);
 
+  // keep refs in sync for the wheel handler (avoids stale closures)
+  useEffect(() => { viewRangeRef.current = viewRange; }, [viewRange]);
+  useEffect(() => { seriesLenRef.current = series.length; }, [series.length]);
+
+  const visibleSeries = useMemo(() => {
+    if (!series.length) return [];
+    return series.slice(viewRange.start, viewRange.end + 1);
+  }, [series, viewRange]);
+
   const yDomain = useMemo(() => {
-    if (!series.length) return ['auto', 'auto'];
-    const closes = series.map((p) => p.close);
-    const min = Math.min(...closes);
-    const max = Math.max(...closes);
-    const padding = Math.max(1, (max - min) * 0.05);
-    return [Math.max(0, min - padding), max + padding];
-  }, [series]);
+    if (!visibleSeries.length) return ['auto', 'auto'];
+    let min = Infinity, max = -Infinity;
+    for (const p of visibleSeries) {
+      if (p.low != null && p.low < min) min = p.low;
+      if (p.close < min) min = p.close;
+      if (p.high != null && p.high > max) max = p.high;
+      if (p.close > max) max = p.close;
+    }
+    const pad = Math.max(0.5, (max - min) * 0.08);
+    return [Math.max(0, min - pad), max + pad];
+  }, [visibleSeries]);
 
-  const handleMouseMove = useCallback((state) => {
-    if (!state?.activePayload || !state.activePayload.length) return;
-    const point = state.activePayload[0].payload;
-    const last = lastHoverRef.current;
-    if (last && last.date === point.date && last.close === point.close) return;
-    lastHoverRef.current = point;
-    setHoverPoint(point);
+  const latest = series[series.length - 1];
+  const visibleFirst = visibleSeries[0];
+  const visibleLast = visibleSeries[visibleSeries.length - 1];
+  const isUp = visibleLast && visibleFirst ? visibleLast.close >= visibleFirst.close : true;
+  const priceChange = visibleLast && visibleFirst ? visibleLast.close - visibleFirst.close : 0;
+  const priceChangePct = visibleFirst?.close ? (priceChange / visibleFirst.close) * 100 : 0;
+  const strokeColor = isUp ? '#10b981' : '#ef4444';
+
+  const isZoomed = series.length > 0 && (viewRange.start > 0 || viewRange.end < series.length - 1);
+  const zoomPct = series.length > 1 ? ((viewRange.end - viewRange.start + 1) / series.length * 100) : 100;
+
+  /* ── callbacks ── */
+  const handleResetZoom = useCallback(() => {
+    setViewRange({ start: 0, end: Math.max(0, seriesLenRef.current - 1) });
   }, []);
 
-  const handleMouseLeave = useCallback(() => {
-    lastHoverRef.current = null;
-    setHoverPoint(null);
-  }, []);
-
+  /* ── data fetching ── */
   useEffect(() => {
     if (!selectedTicker) return;
     const fetchPrices = async () => {
       setLoading(true);
       setError(null);
-      setHoverPoint(null);
       try {
         const res = await api.get('/stockdailyprices', { params: { symbol: selectedTicker.symbol } });
         const raw = res?.data?.data ?? res?.data?.prices ?? res?.data;
         const parsed = parseDailyPrices(raw);
-        setLastxddays(parsed.length);
+        setTotalDays(parsed.length);
         if (!parsed.length) throw new Error('No price data');
         setSeries(parsed);
+        setViewRange({ start: 0, end: parsed.length - 1 });
       } catch (err) {
-        const msg = err?.response?.data?.message || 'Could not load price history. Please try again.';
-        setError(msg);
+        setError(err?.response?.data?.message || 'Could not load price history.');
         setSeries([]);
       } finally {
         setLoading(false);
       }
     };
-
     fetchPrices();
   }, [selectedTicker]);
 
@@ -160,175 +184,288 @@ const GraphsPage = () => {
         if (raw.length) setSelectedTicker(raw[0]);
       } catch (err) {
         console.error('Failed to fetch companies', err);
-        setCompanies([]);
       }
     };
-
     fetchCompanies();
   }, []);
 
-  const latest = series[series.length - 1];
+  /* ── scroll-to-zoom on chart container ── */
+  useEffect(() => {
+    const el = chartContainerRef.current;
+    if (!el) return;
+    const onWheel = (e) => {
+      const len = seriesLenRef.current;
+      if (len < 2) return;
+      e.preventDefault();
+      const { start, end } = viewRangeRef.current;
+      const span = end - start;
+      const MIN_SPAN = Math.max(5, Math.floor(len * 0.02)); // never fewer than ~2% of data or 5 points
+
+      // deltaY > 0 → scroll down → zoom out, deltaY < 0 → scroll up → zoom in
+      const zoomFactor = 0.08;
+      const delta = Math.round(Math.max(1, span * zoomFactor));
+
+      // figure out where the mouse is relative to the chart for anchored zoom
+      const rect = el.getBoundingClientRect();
+      const mouseRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+
+      let newStart, newEnd;
+      if (e.deltaY < 0) {
+        // zoom in
+        if (span <= MIN_SPAN) return;
+        const shrinkLeft = Math.round(delta * mouseRatio);
+        const shrinkRight = delta - shrinkLeft;
+        newStart = Math.min(start + shrinkLeft, end - MIN_SPAN);
+        newEnd = Math.max(end - shrinkRight, newStart + MIN_SPAN);
+      } else {
+        // zoom out
+        const growLeft = Math.round(delta * mouseRatio);
+        const growRight = delta - growLeft;
+        newStart = Math.max(0, start - growLeft);
+        newEnd = Math.min(len - 1, end + growRight);
+      }
+      setViewRange({ start: newStart, end: newEnd });
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []); // refs handle stale closure
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-gray-50 to-blue-50">
       <Navbar />
-      <div className="max-w-7xl mx-auto px-4 py-6 flex flex-col gap-6">
+
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col gap-5">
+        {/* ── Top bar ── */}
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <button
               onClick={() => navigate('/home')}
-              className="flex items-center gap-2 text-blue-600 hover:text-blue-700 transition text-sm"
+              className="flex items-center gap-1.5 text-gray-500 hover:text-blue-600 transition text-sm"
             >
               <ArrowLeft className="w-4 h-4" />
-              <span className="font-medium">Back to Home</span>
+              <span className="font-medium">Home</span>
             </button>
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-xs sm:text-sm font-semibold">
-              <LineChartIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span>Price Graphs</span>
+            <span className="text-gray-300">|</span>
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-600 text-white rounded-lg text-xs font-semibold">
+              <LineChartIcon className="w-3.5 h-3.5" />
+              Price Charts
             </div>
           </div>
 
-          <div className="flex items-center gap-3 text-sm text-gray-600">
-            <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-2 shadow-sm">
-              <CalendarRange className="w-4 h-4 text-blue-600" />
-              <span>Last {lastxddays} market days</span>
-            </div>
-            {latest ? (
-              <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-2 shadow-sm">
-                <TrendingUp className="w-4 h-4 text-green-600" />
-                <div className="flex flex-col leading-tight">
-                  <span className="text-[11px] text-gray-500">Latest close</span>
-                  <span className="text-base font-semibold text-gray-900">${latest.close.toFixed(2)}</span>
-                </div>
+          <div className="flex items-center gap-2.5 text-sm">
+            {totalDays && (
+              <div className="flex items-center gap-1.5 bg-white border border-gray-200 rounded-xl px-3 py-1.5 shadow-sm text-gray-600">
+                <CalendarRange className="w-3.5 h-3.5 text-blue-500" />
+                <span className="text-xs font-medium">{totalDays} days</span>
               </div>
-            ) : null}
+            )}
+            {latest && (
+              <div className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 shadow-sm text-xs font-semibold border ${
+                isUp ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-red-50 border-red-200 text-red-700'
+              }`}>
+                {isUp ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
+                {isUp ? '+' : ''}{priceChangePct.toFixed(2)}%
+              </div>
+            )}
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-          <div className="bg-white rounded-xl shadow-md border border-gray-100 p-5 flex flex-col gap-4 lg:h-[80vh]">
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <h2 className="text-xl font-bold text-gray-900">Tickers</h2>
-              </div>
-              <label className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2">
-                <Search className="w-4 h-4 text-gray-400" />
+        <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-5 items-start">
+          {/* ── Ticker sidebar ── */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex flex-col gap-3 lg:h-[calc(100vh-160px)] lg:sticky lg:top-4">
+            <div>
+              <h2 className="text-sm font-bold text-gray-900 mb-2">Tickers</h2>
+              <label className="flex items-center gap-2 bg-gray-50/80 border border-gray-200 rounded-xl px-3 py-2">
+                <Search className="w-3.5 h-3.5 text-gray-400" />
                 <input
                   type="text"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Search ticker or company"
-                  className="w-full bg-transparent outline-none text-sm text-gray-800"
+                  placeholder="Search..."
+                  className="w-full bg-transparent outline-none text-sm text-gray-800 placeholder-gray-400"
                 />
               </label>
             </div>
-            <div className="flex items-center justify-between text-xs text-gray-600">
-              <p>Showing {filteredTickers.length} of {companies.length}</p>
+
+            <div className="flex items-center justify-between text-[11px] text-gray-500">
+              <span>{filteredTickers.length} of {companies.length}</span>
               <button
                 type="button"
-                onClick={() => setSortMode((prev) => (prev === 'none' ? 'az' : prev === 'az' ? 'za' : 'none'))}
-                className="px-2.5 py-1 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 font-medium"
+                onClick={() => setSortMode((p) => (p === 'none' ? 'az' : p === 'az' ? 'za' : 'none'))}
+                className="px-2 py-0.5 rounded-md border border-gray-200 bg-white hover:bg-gray-50 font-medium"
               >
-                Sort: {sortMode === 'none' ? 'None' : sortMode === 'az' ? 'A-Z' : 'Z-A'}
+                {sortMode === 'none' ? '—' : sortMode === 'az' ? 'A→Z' : 'Z→A'}
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto pr-1">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-3">
-                {filteredTickers.map((item) => {
-                  const isSelected = selectedTicker?.symbol === item.symbol;
-                  return (
-                    <button
-                      key={item.symbol}
-                      onClick={() => setSelectedTicker(item)}
-                      className={`w-full text-left rounded-xl border p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${
-                        isSelected ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div>
-                          <p className="text-sm font-semibold text-blue-700">{item.symbol}</p>
-                          <p className="text-base font-bold text-gray-900 line-clamp-1">{item.name}</p>
-                        </div>
-                        {isSelected ? (
-                          <span className="px-2 py-1 text-[11px] rounded-full bg-blue-100 text-blue-700 font-semibold">Active</span>
-                        ) : (
-                          <span className="px-2 py-1 text-[11px] rounded-full bg-gray-100 text-gray-700 font-semibold">View</span>
-                        )}
+
+            <div className="flex-1 overflow-y-auto -mx-1 px-1 space-y-1.5">
+              {filteredTickers.map((item) => {
+                const active = selectedTicker?.symbol === item.symbol;
+                return (
+                  <button
+                    key={item.symbol}
+                    onClick={() => setSelectedTicker(item)}
+                    className={`w-full text-left rounded-xl px-3 py-2.5 transition-all ${
+                      active
+                        ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
+                        : 'bg-gray-50/60 hover:bg-gray-100 text-gray-800'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className={`text-xs font-bold ${active ? 'text-blue-200' : 'text-blue-600'}`}>
+                          {item.symbol}
+                        </p>
+                        <p className={`text-sm font-semibold truncate ${active ? 'text-white' : 'text-gray-900'}`}>
+                          {item.name}
+                        </p>
                       </div>
-                    </button>
-                  );
-                })}
-              </div>
+                      {active && (
+                        <span className="flex-shrink-0 w-2 h-2 rounded-full bg-white animate-pulse" />
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
-          <div className="lg:col-span-2 bg-white rounded-xl shadow-md border border-gray-100 p-5 flex flex-col gap-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
+          {/* ── Chart panel ── */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 flex flex-col gap-4">
+            {/* Header row */}
+            <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <h2 className="text-xl font-bold text-gray-900">{selectedTicker?.name || 'Select a ticker'}</h2>
-                <p className="text-sm text-gray-600">Daily close prices with hoverable values</p>
+                <div className="flex items-center gap-2">
+                  {selectedTicker && (
+                    <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-xs font-bold shadow">
+                      {selectedTicker.symbol.slice(0, 2)}
+                    </span>
+                  )}
+                  <div>
+                    <h2 className="text-lg font-bold text-gray-900 leading-tight">
+                      {selectedTicker?.name || 'Select a ticker'}
+                    </h2>
+                    {selectedTicker && (
+                      <p className="text-xs text-gray-400">{selectedTicker.symbol} · Daily close</p>
+                    )}
+                  </div>
+                </div>
               </div>
-              {hoverPoint ? (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-sm text-blue-800 shadow-sm">
-                  <p className="font-semibold">{hoverPoint.label || hoverPoint.date}</p>
-                  <p className="text-base font-bold">${hoverPoint.close.toFixed(2)}</p>
-                  <p className="text-[11px] text-blue-700">Hovering point</p>
+
+              {/* Price display card */}
+              {latest && (
+                <div className="rounded-xl px-4 py-2.5 min-w-[180px] border shadow-sm bg-gray-50/80 border-gray-200">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[11px] text-gray-500 font-medium">
+                        Latest · {latest.label || latest.date}
+                      </p>
+                      <p className="text-2xl font-extrabold text-gray-900 tracking-tight">{fmt(latest.close)}</p>
+                    </div>
+                    <div className={`flex items-center gap-0.5 text-xs font-bold px-2 py-1 rounded-lg ${
+                      isUp ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+                    }`}>
+                      {isUp ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
+                      {fmt(Math.abs(priceChange))}
+                    </div>
+                  </div>
+                  {visibleSeries.length > 0 && (
+                    <div className="flex gap-3 text-[11px] text-gray-400 mt-1">
+                      <span>Range: {visibleSeries.length} days</span>
+                      <span>Lo {fmt(Math.min(...visibleSeries.map(p => p.close)))}</span>
+                      <span>Hi {fmt(Math.max(...visibleSeries.map(p => p.close)))}</span>
+                    </div>
+                  )}
                 </div>
-              ) : latest ? (
-                <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 shadow-sm">
-                  <p className="font-semibold">Latest ({latest.label || latest.date})</p>
-                  <p className="text-base font-bold">${latest.close.toFixed(2)}</p>
-                  <p className="text-[11px] text-gray-600">Hover chart to inspect</p>
-                </div>
-              ) : null}
+              )}
             </div>
 
-            <div className="w-full h-[440px] rounded-xl border border-gray-100 bg-gradient-to-br from-white to-slate-50 p-3">
+            {/* Chart */}
+            <div
+              ref={chartContainerRef}
+              className="w-full h-[480px] rounded-xl bg-gray-50/50 border border-gray-100 overflow-hidden relative"
+            >
               {loading ? (
-                <div className="h-full flex items-center justify-center text-gray-600 gap-2">
+                <div className="h-full flex items-center justify-center gap-2 text-gray-500">
                   <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
-                  <span>Loading price history...</span>
+                  <span className="text-sm">Loading chart data...</span>
                 </div>
               ) : error ? (
-                <div className="h-full flex flex-col items-center justify-center text-red-700 gap-2 text-center">
-                  <AlertTriangle className="w-5 h-5" />
-                  <p className="font-semibold">{error}</p>
+                <div className="h-full flex flex-col items-center justify-center gap-2 text-red-600 text-center px-4">
+                  <AlertTriangle className="w-6 h-6" />
+                  <p className="text-sm font-medium">{error}</p>
                 </div>
               ) : !series.length ? (
-                <div className="h-full flex items-center justify-center text-gray-600">Select a ticker to load data.</div>
+                <div className="h-full flex flex-col items-center justify-center text-gray-400 gap-2">
+                  <LineChartIcon className="w-10 h-10 text-gray-200" />
+                  <p className="text-sm">Pick a ticker to view its price chart</p>
+                </div>
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart
-                    data={series}
-                    margin={{ top: 10, right: 20, left: 10, bottom: 10 }}
-                    onMouseMove={handleMouseMove}
-                    onMouseLeave={handleMouseLeave}
+                  <AreaChart
+                    data={visibleSeries}
+                    margin={{ top: 20, right: 24, left: 8, bottom: 8 }}
                   >
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <ChartGradient id="priceGradient" isUp={isUp} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                     <XAxis
                       dataKey="date"
-                      tickFormatter={(v) => new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                      tick={{ fontSize: 11 }}
-                      minTickGap={12}
+                      tickFormatter={(v) =>
+                        new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                      }
+                      tick={{ fontSize: 11, fill: '#94a3b8' }}
+                      tickLine={false}
+                      axisLine={{ stroke: '#e2e8f0' }}
+                      minTickGap={20}
                     />
                     <YAxis
                       domain={yDomain}
                       tickFormatter={(v) => `$${v.toFixed(0)}`}
-                      tick={{ fontSize: 11 }}
-                      width={70}
+                      tick={{ fontSize: 11, fill: '#94a3b8' }}
+                      tickLine={false}
+                      axisLine={false}
+                      width={65}
                     />
-                    <Tooltip content={<PriceTooltip />} cursor={{ stroke: '#94a3b8', strokeDasharray: '4 4' }} />
-                    <Line
+                    <Tooltip
+                      content={<PriceTooltip />}
+                      cursor={{ stroke: '#cbd5e1', strokeWidth: 1, strokeDasharray: '4 4' }}
+                    />
+                    <Area
                       type="monotone"
                       dataKey="close"
-                      stroke="#2563eb"
-                      strokeWidth={2.5}
-                      dot={{ r: 3, strokeWidth: 1, stroke: '#1d4ed8', fill: '#eff6ff' }}
-                      activeDot={{ r: 6, fill: '#1d4ed8', stroke: '#bfdbfe', strokeWidth: 2 }}
+                      stroke={strokeColor}
+                      strokeWidth={2}
+                      fill="url(#priceGradient)"
+                      dot={false}
+                      activeDot={{
+                        r: 5,
+                        fill: strokeColor,
+                        stroke: '#fff',
+                        strokeWidth: 2,
+                        filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.15))',
+                      }}
                     />
-                    <Brush dataKey="date" height={24} stroke="#2563eb" travellerWidth={8} />
-                  </LineChart>
+                  </AreaChart>
                 </ResponsiveContainer>
+              )}
+
+              {/* Zoom indicator */}
+              {series.length > 0 && (
+                <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-white/90 backdrop-blur border border-gray-200 rounded-full px-3 py-1 shadow-sm text-[11px] text-gray-500">
+                  <span className="select-none">Scroll to zoom</span>
+                  {isZoomed && (
+                    <>
+                      <span className="text-gray-300">|</span>
+                      <span className="font-medium text-blue-600">{Math.round(zoomPct)}%</span>
+                      <button
+                        onClick={handleResetZoom}
+                        className="ml-0.5 px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-600 hover:bg-blue-100 font-medium transition"
+                      >
+                        Reset
+                      </button>
+                    </>
+                  )}
+                </div>
               )}
             </div>
           </div>

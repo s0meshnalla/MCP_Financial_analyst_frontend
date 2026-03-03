@@ -70,7 +70,7 @@ const TradeExecutionPage = () => {
         const fetchBalance = async () => {
             try {
                 setBalanceLoading(true);
-                const res = await api.get('/profile/balance');
+                const res = await api.get('/balance');
                 const value = Number(res.data.data);
                 setBalance(Number.isFinite(value) ? value : 0);
             } catch (err) {
@@ -85,7 +85,7 @@ const TradeExecutionPage = () => {
     useEffect(() => {
         const fetchHoldings = async () => {
             try {
-                const res = await api.get('/profile/holdings');
+                const res = await api.get('/holdings');
                 const raw = Array.isArray(res?.data?.data)
                     ? res.data.data
                     : Array.isArray(res?.data)

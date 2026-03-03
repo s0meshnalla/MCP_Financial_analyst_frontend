@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Home, MessageSquare, BarChart3, User, LogOut, TrendingUp, ArrowLeftRight, DollarSign } from 'lucide-react';
+import { Home, MessageSquare, BarChart3, User, LogOut, TrendingUp, ArrowLeftRight, DollarSign, Eye, Bell, Target } from 'lucide-react';
 import api from "../api/axios";
 import { useAuth } from "../context/AuthContext";
 
@@ -16,6 +16,9 @@ const Navbar = () => {
         { path: '/home', icon: Home, label: 'Home' },
         { path: '/dashboard', icon: BarChart3, label: 'Dashboard' },
         { path: '/trade', icon: ArrowLeftRight, label: 'Trade' },
+        { path: '/watchlist', icon: Eye, label: 'Watchlist' },
+        { path: '/alerts', icon: Bell, label: 'Alerts' },
+        { path: '/strategy', icon: Target, label: 'Strategy' },
         { path: '/chat', icon: MessageSquare, label: 'AI Chat' },
     ];
     const { logout } = useAuth();

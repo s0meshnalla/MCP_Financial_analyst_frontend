@@ -1,58 +1,81 @@
-import React, { useState, useEffect } from 'react';
-import { ArrowLeft, TrendingUp, TrendingDown, Filter, Download } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { ArrowLeft, TrendingUp, TrendingDown, Filter, Download, ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import api from '../api/axios';
+
+const PERIODS = [
+    { value: 'ALL', label: 'All Time' },
+    { value: 'LAST_24_HOURS', label: '24h' },
+    { value: 'LAST_7_DAYS', label: '1W' },
+    { value: 'LAST_30_DAYS', label: '1M' },
+    { value: 'LAST_90_DAYS', label: '3M' },
+    { value: 'LAST_1_YEAR', label: '1Y' },
+];
+
+const PAGE_SIZE = 20;
 
 const TransactionsPage = () => {
     const navigate = useNavigate();
     const [transactions, setTransactions] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [filter, setFilter] = useState('all'); // all, buy, sell
+    const [filter, setFilter] = useState('all'); // all, buy, sell, deposit, withdrawal
+    const [period, setPeriod] = useState('ALL');
+    const [page, setPage] = useState(0);
+    const [hasMore, setHasMore] = useState(true);
+
+    const fetchTransactions = useCallback(async (pageNum, periodVal) => {
+        try {
+            setLoading(true);
+            const params = { limit: PAGE_SIZE, page: pageNum };
+            if (periodVal) params.period = periodVal;
+            const { data } = await api.get('/transactions', { params });
+            const raw = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
+            const mapped = raw.map((tx, idx) => {
+                const shares = Number(tx?.assetQuantity) || 0;
+                const amount = Number(tx?.amount) || 0;
+                const price = shares ? amount / shares : 0;
+                const created = tx?.createdAt ? new Date(tx.createdAt) : null;
+                const createdMs = created ? created.getTime() : 0;
+                const date = created
+                    ? created.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+                    : '—';
+                const time = created
+                    ? created.toLocaleString([], { hour: '2-digit', minute: '2-digit', hour12: true })
+                    : '—';
+                const txType = (tx?.type || '').toUpperCase();
+
+                return {
+                    id: tx?.id ?? idx,
+                    symbol: tx?.asset || 'N/A',
+                    type: txType,
+                    shares,
+                    price: Number(price.toFixed(2)),
+                    amount: Number(amount.toFixed(2)),
+                    date,
+                    time,
+                    status: 'executed',
+                    createdMs,
+                };
+            }).sort((a, b) => b.createdMs - a.createdMs);
+
+            setTransactions(mapped);
+            setHasMore(raw.length >= PAGE_SIZE);
+        } catch (err) {
+            console.error('Failed to fetch transactions', err);
+        } finally {
+            setLoading(false);
+        }
+    }, []);
 
     useEffect(() => {
-        const fetchAllTransactions = async () => {
-            try {
-                setLoading(true);
-                const { data } = await api.get('/transactions');
-                const raw = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
-                const mapped = raw.map((tx, idx) => {
-                    const shares = Number(tx?.assetQuantity) || 0;
-                    const amount = Number(tx?.amount) || 0;
-                    const price = shares ? amount / shares : 0;
-                    const created = tx?.createdAt ? new Date(tx.createdAt) : null;
-                    const createdMs = created ? created.getTime() : 0;
-                    const date = created
-                        ? created.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
-                        : '—';
-                    const time = created
-                        ? created.toLocaleString([], { hour: '2-digit', minute: '2-digit', hour12: true })
-                        : '—';
+        fetchTransactions(page, period);
+    }, [page, period, fetchTransactions]);
 
-                    return {
-                        id: tx?.id ?? idx,
-                        symbol: tx?.asset || 'N/A',
-                        type: (tx?.type || '').toUpperCase() === 'SELL' ? 'SELL' : 'BUY',
-                        shares,
-                        price: Number(price.toFixed(2)),
-                        amount: Number(amount.toFixed(2)),
-                        date,
-                        time,
-                        status: 'executed',
-                        createdMs,
-                    };
-                }).sort((a, b) => b.createdMs - a.createdMs);
-
-                setTransactions(mapped);
-            } catch (err) {
-                console.error('Failed to fetch transactions', err);
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchAllTransactions();
-    }, []);
+    const handlePeriodChange = (newPeriod) => {
+        setPeriod(newPeriod);
+        setPage(0);
+    };
 
     const filteredTransactions = transactions.filter(tx => {
         if (filter === 'all') return true;
@@ -116,37 +139,40 @@ const TransactionsPage = () => {
                 <div className="bg-white rounded-xl shadow-md p-6 mb-6">
                     <div className="flex flex-wrap items-center justify-between gap-4">
                         <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium text-gray-700">Filter:</span>
-                            <button
-                                onClick={() => setFilter('all')}
-                                className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
-                                    filter === 'all'
-                                        ? 'bg-blue-600 text-white'
-                                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                }`}
-                            >
-                                All
-                            </button>
-                            <button
-                                onClick={() => setFilter('buy')}
-                                className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
-                                    filter === 'buy'
-                                        ? 'bg-green-600 text-white'
-                                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                }`}
-                            >
-                                Buy
-                            </button>
-                            <button
-                                onClick={() => setFilter('sell')}
-                                className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
-                                    filter === 'sell'
-                                        ? 'bg-red-600 text-white'
-                                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                }`}
-                            >
-                                Sell
-                            </button>
+                            <span className="text-sm font-medium text-gray-700">Type:</span>
+                            {['all', 'buy', 'sell', 'deposit', 'withdrawal'].map((f) => (
+                                <button
+                                    key={f}
+                                    onClick={() => setFilter(f)}
+                                    className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                                        filter === f
+                                            ? f === 'buy' || f === 'deposit' ? 'bg-green-600 text-white'
+                                                : f === 'sell' || f === 'withdrawal' ? 'bg-red-600 text-white'
+                                                : 'bg-blue-600 text-white'
+                                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                    }`}
+                                >
+                                    {f.charAt(0).toUpperCase() + f.slice(1)}
+                                </button>
+                            ))}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                            <Calendar className="w-4 h-4 text-gray-500" />
+                            <span className="text-sm font-medium text-gray-700">Period:</span>
+                            {PERIODS.map((p) => (
+                                <button
+                                    key={p.value}
+                                    onClick={() => handlePeriodChange(p.value)}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+                                        period === p.value
+                                            ? 'bg-blue-600 text-white'
+                                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                    }`}
+                                >
+                                    {p.label}
+                                </button>
+                            ))}
                         </div>
 
                         <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm font-medium">
@@ -193,12 +219,12 @@ const TransactionsPage = () => {
                                             <td className="py-4 px-6">
                                                 <span
                                                     className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold ${
-                                                        transaction.type === 'BUY'
+                                                        transaction.type === 'BUY' || transaction.type === 'DEPOSIT'
                                                             ? 'bg-green-100 text-green-700'
                                                             : 'bg-red-100 text-red-700'
                                                     }`}
                                                 >
-                                                    {transaction.type === 'BUY' ? (
+                                                    {transaction.type === 'BUY' || transaction.type === 'DEPOSIT' ? (
                                                         <TrendingUp className="w-3 h-3" />
                                                     ) : (
                                                         <TrendingDown className="w-3 h-3" />
@@ -225,6 +251,27 @@ const TransactionsPage = () => {
                             </table>
                         </div>
                     )}
+                </div>
+
+                {/* Pagination Controls */}
+                <div className="flex items-center justify-between mt-6">
+                    <button
+                        onClick={() => setPage((p) => Math.max(0, p - 1))}
+                        disabled={page === 0}
+                        className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition text-sm font-medium"
+                    >
+                        <ChevronLeft className="w-4 h-4" />
+                        Previous
+                    </button>
+                    <span className="text-sm text-gray-600">Page {page + 1}</span>
+                    <button
+                        onClick={() => setPage((p) => p + 1)}
+                        disabled={!hasMore}
+                        className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition text-sm font-medium"
+                    >
+                        Next
+                        <ChevronRight className="w-4 h-4" />
+                    </button>
                 </div>
             </div>
         </div>

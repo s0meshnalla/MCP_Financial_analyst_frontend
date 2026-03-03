@@ -15,6 +15,9 @@ import TransactionsPage from './pages/TransactionsPage';
 import TradeExecutionPage from './pages/TradeExecutionPage';
 import GraphsPage from './pages/GraphsPage';
 import CreateProfilePage from './pages/CreateProfilePage';
+import WatchlistPage from './pages/WatchlistPage';
+import AlertsPage from './pages/AlertsPage';
+import StrategyPage from './pages/StrategyPage';
 
 function ProtectedRoute() {
   const { user } = useAuth();
@@ -56,14 +59,13 @@ function App() {
 
     api.post("/auth/refresh")
       .then(res => {
-        setAccessToken(res.data.accessToken);
-        setUser(res.data.user);
+        const payload = res?.data?.data || res?.data;
+        setAccessToken(payload?.accessToken);
+        setUser(payload?.user);
       })
-      .catch((res) => {
-        console.log('App auto-login failed',res);
-        setTimeout(() =>
-        logout()
-        , 3000);
+      .catch((err) => {
+        console.log('App auto-login failed', err);
+        logout();
       })
       .finally(() => setLoading(false));
   }, [setAccessToken, setUser, logout]);
@@ -91,6 +93,9 @@ function App() {
           <Route path="/graphs" element={<GraphsPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/chat" element={<ChatPage />} />
+          <Route path="/watchlist" element={<WatchlistPage />} />
+          <Route path="/alerts" element={<AlertsPage />} />
+          <Route path="/strategy" element={<StrategyPage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />
