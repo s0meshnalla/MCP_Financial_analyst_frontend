@@ -129,7 +129,7 @@ const ChatPage = () => {
         const fetchHistory = async () => {
             try {
                 setLoadingHistory(true);
-                const res = await api.get('/chats', { params: { limit: 20, page: 0 } });
+                const res = await api.get('/chats', { params: { limit: 20, page: 1 } });
                 const raw = Array.isArray(res.data.data)
                     ? res.data.data
                     : Array.isArray(res?.data)
@@ -182,7 +182,7 @@ const ChatPage = () => {
         const prevScrollHeight = container ? container.scrollHeight : 0;
 
         try {
-            const res = await api.get('/chats', { params: { limit: 20, page: chatPage } });
+            const res = await api.get('/chats', { params: { limit: 20, page: chatPage + 1 } });
             const raw = Array.isArray(res.data.data)
                 ? res.data.data
                 : Array.isArray(res?.data)

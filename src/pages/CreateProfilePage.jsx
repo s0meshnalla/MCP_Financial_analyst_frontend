@@ -28,15 +28,15 @@ const CreateProfilePage = () => {
 
   // ---- Profile data ----
   const [createData, setCreateData] = useState({
-    firstName: '', lastName: '', dateOfBirth: '', gender: 'prefer_not_to_say',
+    firstName: '', lastName: '', dateOfBirth: '', gender: 'PREFER_NOT_TO_SAY',
     username: '', addressLine1: '', addressLine2: '', city: '', state: '',
     postalCode: '', country: '', jobTitle: '', companyName: '', industry: '',
-    employmentStatus: 'employed', salaryRange: '', phone: '',
+    employmentStatus: 'EMPLOYED', salaryRange: '', phone: '',
   });
 
   // ---- Preferences ----
   const [preferences, setPreferences] = useState({
-    sectors: [], riskTolerance: 'moderate', preferredAsset: 'stocks', investmentGoals: 'short',
+    sectors: [], riskTolerance: 'MODERATE', preferredAsset: 'STOCKS', investmentGoals: 'SHORT',
   });
   const [sectorsList, setSectorsList] = useState([]);
   const [sectorsLoading, setSectorsLoading] = useState(false);
@@ -291,9 +291,9 @@ const CreateProfilePage = () => {
                     <label className="block text-sm font-medium text-gray-700 mb-1">Gender</label>
                     <select value={createData.gender} onChange={e => field('gender', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition">
-                      <option value="male">Male</option>
-                      <option value="female">Female</option>
-                      <option value="prefer_not_to_say">Prefer not to say</option>
+                      <option value="MALE">Male</option>
+                      <option value="FEMALE">Female</option>
+                      <option value="PREFER_NOT_TO_SAY">Prefer not to say</option>
                     </select>
                   </div>
                 </div>
@@ -414,11 +414,11 @@ const CreateProfilePage = () => {
                       <label className="block text-sm text-gray-600 mb-1">Employment Status</label>
                       <select value={createData.employmentStatus} onChange={e => field('employmentStatus', e.target.value)}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition">
-                        <option value="employed">Employed</option>
-                        <option value="self_employed">Self-employed</option>
-                        <option value="student">Student</option>
-                        <option value="unemployed">Unemployed</option>
-                        <option value="retired">Retired</option>
+                        <option value="EMPLOYED">Employed</option>
+                        <option value="SELF_EMPLOYED">Self-employed</option>
+                        <option value="STUDENT">Student</option>
+                        <option value="UNEMPLOYED">Unemployed</option>
+                        <option value="RETIRED">Retired</option>
                       </select>
                     </div>
                     <div>
@@ -450,9 +450,9 @@ const CreateProfilePage = () => {
                   </label>
                   <div className="grid grid-cols-3 gap-3">
                     {[
-                      { val: 'low',      label: 'Conservative', desc: 'Low risk, steady returns', color: 'green' },
-                      { val: 'moderate', label: 'Moderate',     desc: 'Balanced risk & reward', color: 'yellow' },
-                      { val: 'high',     label: 'Aggressive',   desc: 'High risk, high reward', color: 'red' },
+                      { val: 'LOW',      label: 'Conservative', desc: 'Low risk, steady returns', color: 'green' },
+                      { val: 'MODERATE', label: 'Moderate',     desc: 'Balanced risk & reward', color: 'yellow' },
+                      { val: 'HIGH',     label: 'Aggressive',   desc: 'High risk, high reward', color: 'red' },
                     ].map(r => (
                       <button key={r.val} type="button" onClick={() => setPreferences(p => ({ ...p, riskTolerance: r.val }))}
                         className={`p-4 rounded-xl border-2 text-left transition-all duration-200
@@ -477,10 +477,10 @@ const CreateProfilePage = () => {
                   </label>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     {[
-                      { val: 'super_short', label: '< 2 years',   tag: 'Very Short' },
-                      { val: 'short',       label: '2–5 years',   tag: 'Short' },
-                      { val: 'medium',      label: '5–10 years',  tag: 'Medium' },
-                      { val: 'long',        label: '10+ years',   tag: 'Long' },
+                      { val: 'SUPER_SHORT', label: '< 2 years',   tag: 'Very Short' },
+                      { val: 'SHORT',       label: '2–5 years',   tag: 'Short' },
+                      { val: 'MEDIUM',      label: '5–10 years',  tag: 'Medium' },
+                      { val: 'LONG',        label: '10+ years',   tag: 'Long' },
                     ].map(g => (
                       <button key={g.val} type="button" onClick={() => setPreferences(p => ({ ...p, investmentGoals: g.val }))}
                         className={`p-3 rounded-xl border-2 text-center transition-all duration-200
